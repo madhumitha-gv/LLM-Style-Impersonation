@@ -1,0 +1,21 @@
+# Core ML
+torch>=2.1.0
+transformers>=4.40.0
+accelerate>=0.27.0
+bitsandbytes>=0.43.0
+
+# Embeddings & RAG
+sentence-transformers>=2.6.0
+faiss-cpu>=1.7.4
+
+# Evaluation
+nltk>=3.8.1
+rouge-score>=0.1.2
+scikit-learn>=1.4.0
+
+# Data & Utils
+numpy>=1.26.0
+pandas>=2.2.0
+
+# Experiment tracking
+tqdm>=4.66.0
