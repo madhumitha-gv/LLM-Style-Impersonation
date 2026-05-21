@@ -25,9 +25,9 @@ from prompts import (
 
 # ── Model Config ───────────────────────────────────────────────────────────────
 
-MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+GPU_MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+CPU_MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"
 
-# 4-bit quantization — fits on T4 (16GB) and runs fast on H100
 QUANT_CONFIG = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_compute_dtype=torch.float16,
@@ -45,64 +45,93 @@ GENERATION_CONFIG = {
 
 
 # ── Model Loader ───────────────────────────────────────────────────────────────
-# Replace the load_model function signature and return
+
 def load_model(model_id: str = None):
+    """
+    Loads the appropriate model based on hardware availability.
+
+    GPU available : LLaMA 3.1 8B Instruct with 4-bit quantization.
+                    Requires HuggingFace token for gated model access.
+                    Set via: huggingface-cli login
+                          or: export HUGGINGFACE_TOKEN=your_token_here
+
+    CPU only      : Falls back to Mistral-7B-Instruct-v0.3 without
+                    quantization. Slower but fully reproducible locally.
+
+    Args:
+        model_id - optional override; defaults to GPU_MODEL_ID on CUDA,
+                   CPU_MODEL_ID on CPU.
+
+    Returns:
+        (tokenizer, model, device)
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     if model_id is None:
-        model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct" if device == "cuda" \
-                   else "mistralai/Mistral-7B-Instruct-v0.3"
+        model_id = GPU_MODEL_ID if device == "cuda" else CPU_MODEL_ID
 
     print(f"Device : {device.upper()}")
     print(f"Model  : {model_id}")
-    
+
+    print("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     tokenizer.pad_token = tokenizer.eos_token
 
+    print("Loading model...")
     if device == "cuda":
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             quantization_config=QUANT_CONFIG,
             device_map="auto",
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
         )
     else:
+        # CPU fallback — no quantization, float32 for numerical stability
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="cpu",
-            dtype=torch.float32,
+            torch_dtype=torch.float32,
         )
 
     model.eval()
     print("Model ready.\n")
-    return tokenizer, model, device  # ← returns 3 values
+    return tokenizer, model, device
+
 
 # ── Single Generation ──────────────────────────────────────────────────────────
 
-def generate(prompt: str, tokenizer, model) -> str:
+def generate(prompt: str, tokenizer, model, max_new_tokens: int = None) -> str:
     """
     Generates a single response for a given prompt.
-    Strips the prompt prefix from the output.
+    Strips the prompt tokens from the output, returning only new text.
 
     Args:
-        prompt    - fully formatted Llama 3 chat prompt
-        tokenizer - loaded tokenizer
-        model     - loaded model
+        prompt         - fully formatted Llama 3 / Mistral chat prompt
+        tokenizer      - loaded tokenizer
+        model          - loaded model
+        max_new_tokens - optional token limit override; defaults to
+                         GENERATION_CONFIG value (150). Pass a lower
+                         value to constrain output to match a person's
+                         natural writing length.
 
     Returns:
-        Generated text (answer only, no prompt)
+        Generated text (answer only, no prompt echo)
     """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     input_len = inputs["input_ids"].shape[1]
 
+    # Override max_new_tokens if specified, otherwise use default config
+    config = {**GENERATION_CONFIG}
+    if max_new_tokens is not None:
+        config["max_new_tokens"] = max_new_tokens
+
     with torch.no_grad():
         output = model.generate(
             **inputs,
-            **GENERATION_CONFIG,
+            **config,
             pad_token_id=tokenizer.eos_token_id,
         )
 
-    # Decode only the newly generated tokens (not the prompt)
     generated_ids = output[0][input_len:]
     return tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
@@ -127,15 +156,14 @@ def run_impersonation(
     Returns:
         List of dicts, one per test question:
         {
-            "question": str,
+            "question":     str,
             "ground_truth": str,
-            "zero_shot": str,
-            "few_shot": str,
-            "rag": str,
+            "zero_shot":    str,
+            "few_shot":     str,
+            "rag":          str,
         }
     """
     results = []
-
     print(f"\nRunning impersonation for {person.name} ({len(person.test)} test questions)...")
 
     for pair in tqdm(person.test):
@@ -146,11 +174,11 @@ def run_impersonation(
         rg = generate(rag_prompt(person, pair.question, retrieved), tokenizer, model)
 
         results.append({
-            "question": pair.question,
+            "question":     pair.question,
             "ground_truth": pair.answer,
-            "zero_shot": zs,
-            "few_shot": fs,
-            "rag": rg,
+            "zero_shot":    zs,
+            "few_shot":     fs,
+            "rag":          rg,
         })
 
     return results
@@ -176,21 +204,18 @@ def run_style_transfer(
     Returns:
         List of dicts, one per neutral text:
         {
-            "topic": str,
+            "topic":        str,
             "neutral_text": str,
-            "zero_shot": str,
-            "few_shot": str,
-            "rag": str,
+            "zero_shot":    str,
+            "few_shot":     str,
+            "rag":          str,
         }
     """
     results = []
-
     print(f"\nRunning style transfer for {person.name} ({len(NEUTRAL_TEXTS)} texts)...")
 
     for item in tqdm(NEUTRAL_TEXTS):
         neutral_text = item["text"]
-
-        # For RAG, retrieve using the neutral text as the query
         retrieved = index.retrieve(neutral_text, top_k=top_k)
 
         zs = generate(style_transfer_zero_shot(person, neutral_text), tokenizer, model)
@@ -198,11 +223,11 @@ def run_style_transfer(
         rg = generate(style_transfer_rag(person, neutral_text, retrieved), tokenizer, model)
 
         results.append({
-            "topic": item["topic"],
+            "topic":        item["topic"],
             "neutral_text": neutral_text,
-            "zero_shot": zs,
-            "few_shot": fs,
-            "rag": rg,
+            "zero_shot":    zs,
+            "few_shot":     fs,
+            "rag":          rg,
         })
 
     return results
