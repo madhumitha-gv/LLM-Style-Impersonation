@@ -115,7 +115,7 @@ def evaluate_impersonation(
     Returns:
         DataFrame with per-question scores and mean summary row
     """
-    strategies = ["zero_shot", "few_shot", "rag"]
+    strategies = ["zero_shot", "few_shot", "rag", "rag_reranked", "rag_style", "contrastive"]
     rows = []
 
     for item in results:
@@ -167,7 +167,7 @@ def evaluate_style_transfer(
     Returns:
         DataFrame with per-text similarity scores
     """
-    strategies = ["zero_shot", "few_shot", "rag"]
+    strategies = ["zero_shot", "few_shot", "rag", "rag_reranked", "rag_style", "contrastive"]
 
     # Use the mean of training answer embeddings as the "style centroid"
     style_embs = model.encode(person_train_answers, normalize_embeddings=True)
@@ -286,7 +286,7 @@ def print_summary(
     print("\n── Task 1: Impersonation ──")
     print(f"{'Strategy':<12} {'BLEU':>8} {'ROUGE-L':>10} {'Style Sim':>12}")
     print("-" * 44)
-    for strategy in ["zero_shot", "few_shot", "rag"]:
+    for strategy in ["zero_shot", "few_shot", "rag", "rag_reranked", "rag_style", "contrastive"]:
         label = strategy.replace("_", "-").title()
         bleu = mean_row[f"{strategy}_bleu"]
         rouge = mean_row[f"{strategy}_rouge_l"]
@@ -298,7 +298,7 @@ def print_summary(
     print("\n── Task 2: Style Transfer ──")
     print(f"{'Strategy':<12} {'Style Sim':>12}")
     print("-" * 26)
-    for strategy in ["zero_shot", "few_shot", "rag"]:
+    for strategy in ["zero_shot", "few_shot", "rag", "rag_reranked", "rag_style", "contrastive"]:
         label = strategy.replace("_", "-").title()
         sim = mean_st[f"{strategy}_style_sim"]
         print(f"{label:<12} {sim:>12.3f}")

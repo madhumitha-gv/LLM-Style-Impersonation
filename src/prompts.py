@@ -273,3 +273,32 @@ def style_transfer_rag(
     user = f"Rewrite this in {person.name}'s voice:\n\n{neutral_text}"
 
     return format_llama3_prompt(system=system, user=user)
+
+
+# ── Contrastive Decoding Prompts ───────────────────────────────────────────────
+
+def neutral_prompt(question: str) -> str:
+    """
+    Baseline prompt with NO person-specific context.
+    Used as the 'without context' side of contrastive decoding.
+    The model answers generically — contrastive decoding amplifies
+    what the person-specific prompt adds on top of this.
+    """
+    system = (
+        "You are a helpful assistant. Answer the following question naturally "
+        "and conversationally in first person."
+    )
+    return format_llama3_prompt(system=system, user=question)
+
+
+def neutral_style_transfer_prompt(neutral_text: str) -> str:
+    """
+    Baseline style transfer prompt with NO person-specific context.
+    Used as the 'without context' side of contrastive decoding.
+    """
+    system = (
+        "You are a helpful assistant. Rewrite the following text in a natural, "
+        "conversational first-person voice."
+    )
+    user = f"Rewrite this naturally:\n\n{neutral_text}"
+    return format_llama3_prompt(system=system, user=user)
