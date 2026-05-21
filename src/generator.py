@@ -45,7 +45,6 @@ GENERATION_CONFIG = {
 
 
 # ── Model Loader ───────────────────────────────────────────────────────────────
-
 # Replace the load_model function signature and return
 def load_model(model_id: str = None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,7 +76,6 @@ def load_model(model_id: str = None):
     model.eval()
     print("Model ready.\n")
     return tokenizer, model, device  # ← returns 3 values
-
 
 # ── Single Generation ──────────────────────────────────────────────────────────
 
