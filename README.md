@@ -20,7 +20,7 @@ This matters for personalized AI assistants, writing tools, and understanding th
 
 **Task 2 — Style Transfer:** Given a neutral piece of text, rewrite it to sound like it was written by a specific person.
 
-Both tasks are evaluated across **6 prompting strategies** on **2 people with distinctly different writing styles**.
+Both tasks are evaluated across **7 prompting strategies** on **2 people with distinctly different writing styles**.
 
 ---
 
@@ -33,13 +33,13 @@ Both tasks are evaluated across **6 prompting strategies** on **2 people with di
 
 **Split:** 80% train (36 pairs), 20% test (9 pairs) per person.
 
-The style contrast between the two people is intentional — the style classifier confirms 88.9% separability, meaning their writing styles are clearly distinguishable.
+The style contrast between the two people is intentional — the style classifier confirms **88.9% separability**, meaning their writing styles are clearly distinguishable.
 
 ---
 
 ## Strategies Compared
 
-Six conditions tested, representing a progression from no context to increasingly targeted context:
+Seven conditions tested, representing a progression from no context to increasingly targeted context:
 
 | # | Strategy | Description |
 |---|---|---|
@@ -48,7 +48,8 @@ Six conditions tested, representing a progression from no context to increasingl
 | 3 | **RAG** | Top-5 semantically similar Q&A pairs retrieved via FAISS + Sentence-BERT cosine similarity |
 | 4 | **RAG + Reranking** | Fetch 15 candidates, rerank by combined semantic relevance (50%) + style centroid similarity (50%) |
 | 5 | **RAG + Style-Biased** | Style centroid prioritized over topic relevance (30% semantic, 70% style) — retrieves stylistically pure examples |
-| 6 | **Contrastive Decoding** | Token-level: amplifies tokens that are more likely given the person context vs. a neutral baseline prompt |
+| 6 | **Contrastive Decoding** | Token-level: amplifies tokens more likely given person context vs. a neutral baseline prompt |
+| 7 | **RAG + Constrained** | RAG with per-person token budget (1.5x avg word count) — addresses verbosity bias for terse styles |
 
 ---
 
@@ -58,8 +59,8 @@ Six conditions tested, representing a progression from no context to increasingl
 Measures n-gram word overlap between the generated answer and the ground truth answer. Counts how many 1–4 word sequences in the generated text also appear in the reference. Uses smoothing to handle short sequences.
 
 - **Range:** 0–1 (higher = more word-for-word similarity)
-- **Why it's low here:** The model generates new text in someone's style — it doesn't copy their exact words. Low BLEU is expected and does not indicate failure. It would only be high if the model memorized answers verbatim.
-- **Used for:** Task 1 (Impersonation) only — Task 2 has no ground truth to compare against.
+- **Why it's low here:** The model generates new text in someone's style — it doesn't copy their exact words. Low BLEU is expected and does not indicate failure.
+- **Used for:** Task 1 (Impersonation) only.
 
 ### ROUGE-L (Recall-Oriented Understudy for Gisting Evaluation)
 Measures the longest common subsequence (LCS) between generated and reference text — words that appear in the same order, not necessarily consecutively. Reports F1 score balancing precision and recall.
@@ -69,69 +70,117 @@ Measures the longest common subsequence (LCS) between generated and reference te
 - **Used for:** Task 1 only.
 
 ### Style Similarity (Sentence-BERT Cosine Similarity)
-Encodes both texts into 384-dimensional semantic vectors using Sentence-BERT (`all-MiniLM-L6-v2`) and computes cosine similarity. Captures tone, phrasing patterns, and semantic closeness — not just word overlap.
+Encodes generated text into 384-dimensional semantic vectors using Sentence-BERT (`all-MiniLM-L6-v2`) and computes cosine similarity against the person's **style centroid** — the mean of all 36 training answer embeddings. This measures how close the generated output is to the person's overall writing voice, not just one specific answer.
 
-- **Range:** -1 to 1 (higher = more similar in meaning and tone)
-- **Most meaningful metric for style** — measures whether the generated answer *feels* like the person, not just whether it uses the same words.
-- **Task 1:** Generated answer vs. ground truth answer
-- **Task 2:** Generated rewrite vs. person's style centroid (mean of all training answer embeddings)
+- **Range:** -1 to 1 (higher = closer to the person's style)
+- **Most meaningful metric for style** — captures tone, phrasing patterns, and semantic closeness.
+- **Used for:** Both Task 1 and Task 2.
 
 ### Style Classifier Accuracy
-A logistic regression classifier trained on Sentence-BERT embeddings to distinguish between the two people's writing. Evaluated with 5-fold cross-validation.
+A logistic regression classifier trained on Sentence-BERT embeddings to distinguish between the two people's writing. Evaluated with 5-fold cross-validation on real answers, then applied to generated outputs.
 
 - **Baseline:** 50% (random chance with 2 people)
-- **> 80%** = styles are clearly distinguishable
-- **< 60%** = styles are very similar, impersonation is harder to evaluate
-
-Also used to check whether generated outputs are classified to the correct person — a high-quality impersonation should "fool" the classifier.
+- **> 80%** = styles clearly distinguishable
+- **Classifier accuracy on generated outputs** = how often the model correctly imitates the target person's style
 
 ---
 
 ## Results
 
+### Style Classifier on Real Data
+**5-fold CV accuracy: 88.9%** — the two people's styles are clearly distinguishable, making this a meaningful evaluation.
+
+---
+
 ### Task 1 — Impersonation
 
 **Person K** (conversational, hedged style):
 
-| Strategy | BLEU | ROUGE-L | Style Sim |
-|---|---|---|---|
-| Zero-Shot | 0.009 | 0.117 | 0.630 |
-| Few-Shot | 0.009 | 0.143 | 0.683 |
-| RAG | 0.012 | 0.148 | 0.725 |
-| RAG + Reranking | — | — | — |
-| RAG + Style-Biased | — | — | — |
-| Contrastive Decoding | — | — | — |
+| Strategy | BLEU | ROUGE-L | Style Sim | Classifier |
+|---|---|---|---|---|
+| Zero-Shot | 0.009 | 0.123 | 0.359 | 100% |
+| Few-Shot | 0.016 | 0.136 | 0.321 | 100% |
+| RAG | 0.014 | 0.152 | 0.343 | 100% |
+| RAG + Reranking | 0.019 | 0.155 | 0.351 | 100% |
+| **RAG + Style-Biased** | 0.013 | 0.152 | **0.413** | 100% |
+| Contrastive Decoding | 0.017 | 0.147 | 0.350 | 100% |
+| RAG + Constrained | — | — | 0.364 | 100% |
 
 **Person M** (direct, terse style):
 
-| Strategy | BLEU | ROUGE-L | Style Sim |
+| Strategy | BLEU | ROUGE-L | Style Sim | Classifier |
+|---|---|---|---|---|
+| Zero-Shot | 0.004 | 0.052 | 0.244 | 0% |
+| Few-Shot | 0.005 | 0.066 | 0.237 | 0% |
+| RAG | 0.005 | 0.070 | 0.251 | 0% |
+| RAG + Reranking | 0.005 | 0.064 | 0.258 | 0% |
+| RAG + Style-Biased | 0.004 | 0.057 | 0.251 | 0% |
+| Contrastive Decoding | 0.007 | 0.101 | 0.234 | 0% |
+| **RAG + Constrained** | — | — | **0.292** | **11%** |
+
+---
+
+### Task 2 — Style Transfer
+
+**Person K:**
+
+| Strategy | Style Sim | Classifier |
+|---|---|---|
+| Zero-Shot | 0.359 | 100% |
+| Few-Shot | 0.381 | 100% |
+| RAG | 0.364 | 100% |
+| RAG + Reranking | 0.387 | 100% |
+| **RAG + Style-Biased** | **0.411** | 100% |
+| Contrastive Decoding | 0.373 | 100% |
+| RAG + Constrained | 0.382 | 100% |
+
+**Person M:**
+
+| Strategy | Style Sim | Classifier |
+|---|---|---|
+| Zero-Shot | 0.282 | 0% |
+| Few-Shot | 0.304 | 0% |
+| RAG | 0.312 | 0% |
+| RAG + Reranking | 0.289 | 0% |
+| RAG + Style-Biased | 0.290 | 0% |
+| Contrastive Decoding | 0.286 | 0% |
+| **RAG + Constrained** | **0.348** | **20%** |
+
+---
+
+### Best Strategy Per Person
+
+| Person | Best Strategy | Style Sim | Classifier |
 |---|---|---|---|
-| Zero-Shot | 0.003 | 0.049 | 0.404 |
-| Few-Shot | 0.004 | 0.059 | 0.384 |
-| RAG | 0.004 | 0.072 | 0.411 |
-| RAG + Reranking | — | — | — |
-| RAG + Style-Biased | — | — | — |
-| Contrastive Decoding | — | — | — |
+| K | RAG + Style-Biased | 0.413 | 100% |
+| M | RAG + Constrained* | 0.292 | 11–20% |
 
-*Extended strategy results (RAG+Reranking, Style-Biased, Contrastive) to be updated after full experiment run.*
+*Token budget = 1.5x average word count (max 20 tokens for M)
 
-### Style Classifier
+---
 
-| Metric | Value |
-|---|---|
-| 5-fold CV accuracy | 88.9% |
-| K RAG outputs classified correctly | 100% |
-| M RAG outputs classified correctly | 0% |
+## Key Findings
 
-### Key Findings
+**1. RAG + Style-Biased retrieval is the best strategy for conversational styles.**
+For Person K, prioritizing stylistically representative examples (70% style weight, 30% semantic) outperforms all other strategies in both impersonation (0.413) and style transfer (0.411). Retrieving examples that sound like the person matters more than retrieving topically relevant ones.
 
-**RAG consistently outperforms Few-Shot and Zero-Shot for conversational styles.** For Person K, style similarity improves from 0.630 (Zero-Shot) → 0.683 (Few-Shot) → 0.725 (RAG), showing a clear benefit of targeted context retrieval.
+**2. Standard prompting completely fails for terse, minimalist styles.**
+For Person M, all 6 standard strategies score between 0.234–0.258 on style similarity with 0% classifier accuracy across both tasks. The model generates verbose, hedged outputs regardless of the target style — a fundamental verbosity bias in instruction-tuned LLMs.
 
-**Prompting strategies struggle with terse, minimalist styles.** For Person M, all three strategies score between 0.384–0.411 with no clear winner. The model has a verbosity bias — it generates elaborate answers even when the target style is minimal.
+**3. Length constraint partially recovers style accuracy for terse writers.**
+By forcing generation within the person's natural token budget (RAG + Constrained), classifier accuracy improves from 0% to 11% on impersonation and 20% on style transfer for Person M. This confirms that the verbosity bias is partially length-driven — shorter outputs are more likely to be classified correctly even if phrasing remains non-terse.
 
-**The model defaults to Person K's style when impersonating Person M.** M's RAG outputs are classified as K by the style classifier 100% of the time, suggesting the model cannot fully suppress its tendency toward verbose, hedged generation.
+**4. Length constraint hurts conversational styles.**
+For Person K, constraining to 39 tokens (1.5x avg) produces incomplete answers that score lower than unconstrained RAG-Style (0.364 vs 0.413). Style-appropriate length is a person-specific property — one-size constraints do not generalize.
 
-**Style classifier at 88.9% confirms the two styles are clearly separable** — making this a meaningful comparison. The impersonation difficulty is a genuine model limitation, not a dataset artifact.
+**5. More context does not always help.**
+For Person K, Few-Shot (0.321) performs worse than Zero-Shot (0.359) on style similarity. Random example selection in Few-Shot introduces noise — the 5 sampled examples may not represent the person's style well. RAG-Style addresses this by selecting stylistically consistent examples rather than random ones.
+
+**6. Contrastive decoding adds compute cost with no consistent gain.**
+With alpha=0.1, contrastive decoding matches or slightly underperforms base RAG across both tasks and people. The amplification signal may be too weak, or the neutral amateur prompt is too similar to the expert prompt to generate meaningful contrast.
+
+**7. The verbosity bias is a weight-level problem, not a prompting problem.**
+All 7 prompting strategies — including length constraint — fail to fully impersonate Person M's terse style. The model's training on verbose human feedback data creates a persistent generation prior that prompting alone cannot fully override. Weight-level intervention (e.g. LoRA fine-tuning on terse examples) would be the natural next step.
 
 ---
 
@@ -144,11 +193,12 @@ LLM-Style-Impersonation/
 ├── src/
 │   ├── data_loader.py         # Load datasets, train/test split, style fingerprint
 │   ├── embeddings.py          # Sentence-BERT + FAISS (base, reranked, style-biased)
-│   ├── prompts.py             # Prompt builders for all 6 strategies
+│   ├── prompts.py             # Prompt builders for all strategies
 │   ├── generator.py           # LLaMA 3.1 8B / Mistral 7B inference
 │   ├── contrastive.py         # Contrastive decoding implementation
 │   ├── evaluator.py           # BLEU, ROUGE-L, style similarity, classifier
-│   └── run_experiments.py     # Main pipeline — runs all 6 conditions
+│   ├── run_experiments.py     # Main pipeline — runs all 6 standard conditions
+│   └── run_constrained.py     # RAG + Constrained condition (7th strategy)
 ├── notebooks/
 │   └── experiments.ipynb      # Colab-ready notebook (clone → run)
 ├── results/                   # CSVs and JSONs generated after experiments
@@ -171,7 +221,11 @@ from google.colab import userdata
 from huggingface_hub import login
 login(token=userdata.get('HF_TOKEN'))
 
+# Run all 6 standard conditions
 !python src/run_experiments.py
+
+# Run 7th condition (length-constrained)
+!python src/run_constrained.py
 ```
 
 Requires a HuggingFace account with LLaMA 3.1 8B access approved at:
@@ -187,6 +241,7 @@ cd LLM-Style-Impersonation
 pip install -r requirements.txt
 huggingface-cli login
 python src/run_experiments.py
+python src/run_constrained.py
 ```
 
 ---
