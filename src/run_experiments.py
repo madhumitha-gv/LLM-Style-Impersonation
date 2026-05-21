@@ -29,6 +29,7 @@ from embeddings import build_indexes
 from generator import load_model, run_impersonation, run_style_transfer
 from contrastive import run_contrastive_impersonation, run_contrastive_style_transfer
 from evaluator import (
+    STRATEGIES,
     evaluate_impersonation,
     evaluate_style_transfer,
     train_style_classifier,
@@ -184,10 +185,11 @@ def main():
 
         # ── 9. Evaluate ────────────────────────────────────────────────────────
         print("\nSTEP 8: Evaluating all conditions")
-        imp_df = evaluate_impersonation(merged_imp, embed_model)
+        train_answers = [p.answer for p in person.train]
+        imp_df = evaluate_impersonation(merged_imp, embed_model, train_answers)
         st_df  = evaluate_style_transfer(
             merged_st,
-            person_train_answers=[p.answer for p in person.train],
+            person_train_answers=train_answers,
             model=embed_model,
         )
 
@@ -205,12 +207,17 @@ def main():
     classifier, cv_acc = train_style_classifier(people, embed_model)
 
     for name, person in people.items():
-        for condition in ["rag", "rag_reranked", "rag_style", "contrastive"]:
+        print(f"\n── {person.name} — Impersonation ──")
+        for condition in STRATEGIES:
             generated = [r[condition] for r in all_results[name]["impersonation"]]
-            from evaluator import classify_generated
             clf_result = classify_generated(generated, name.lower(), classifier, embed_model)
-            print(f"{person.name} [{condition}] classified correctly: "
-                  f"{clf_result['accuracy']:.1%}")
+            print(f"  [{condition:<14}] classified correctly: {clf_result['accuracy']:.1%}")
+
+        print(f"\n── {person.name} — Style Transfer ──")
+        for condition in STRATEGIES:
+            generated = [r[condition] for r in all_results[name]["style_transfer"]]
+            clf_result = classify_generated(generated, name.lower(), classifier, embed_model)
+            print(f"  [{condition:<14}] classified correctly: {clf_result['accuracy']:.1%}")
 
     print(f"\nAll results saved to results/")
     print("Done.")
