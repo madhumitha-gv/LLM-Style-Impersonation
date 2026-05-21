@@ -6,7 +6,7 @@
 
 ## Research Question
 
-> **Can a large language model capture a specific person's communication style — and which prompting strategy best achieves this?**
+> ** Can a large language model capture a specific person's communication style ? if yes, which prompting strategy best achieves this?**
 
 When we interact with AI systems, they generate generic, averaged responses. But real people have distinct voices — some are verbose and hedging, others terse and direct. This project asks: given a small set of real Q&A examples from a person, can we prompt an LLM to answer new questions *as that person*, or rewrite text *in their voice*?
 
