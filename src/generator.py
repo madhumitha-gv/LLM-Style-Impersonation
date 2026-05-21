@@ -46,34 +46,37 @@ GENERATION_CONFIG = {
 
 # ── Model Loader ───────────────────────────────────────────────────────────────
 
-def load_model(model_id: str = MODEL_ID):
-    """
-    Loads LLaMA 3.1 8B Instruct with 4-bit quantization.
-    Requires a HuggingFace token for gated model access.
+# Replace the load_model function signature and return
+def load_model(model_id: str = None):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    if model_id is None:
+        model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct" if device == "cuda" \
+                   else "mistralai/Mistral-7B-Instruct-v0.3"
 
-    Set your token via:
-        huggingface-cli login
-    or:
-        export HUGGINGFACE_TOKEN=your_token_here
-
-    Returns:
-        (tokenizer, model)
-    """
-    print(f"Loading tokenizer: {model_id}")
+    print(f"Device : {device.upper()}")
+    print(f"Model  : {model_id}")
+    
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     tokenizer.pad_token = tokenizer.eos_token
 
-    print(f"Loading model with 4-bit quantization...")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        quantization_config=QUANT_CONFIG,
-        device_map="auto",
-        torch_dtype=torch.float16,
-    )
-    model.eval()
+    if device == "cuda":
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            quantization_config=QUANT_CONFIG,
+            device_map="auto",
+            dtype=torch.float16,
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map="cpu",
+            dtype=torch.float32,
+        )
 
+    model.eval()
     print("Model ready.\n")
-    return tokenizer, model
+    return tokenizer, model, device  # ← returns 3 values
 
 
 # ── Single Generation ──────────────────────────────────────────────────────────
